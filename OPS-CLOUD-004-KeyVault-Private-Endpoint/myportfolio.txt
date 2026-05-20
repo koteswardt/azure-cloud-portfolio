@@ -1,0 +1,262 @@
+# OPS-CLOUD-004 — Azure Key Vault + Private Endpoint
+
+> **Phase 1 — Azure Console (GUI)**  
+> **Week 2 — PaaS & Managed Services**  
+> **Status:** ✅ Completed | **Date:** 28 April 2026
+
+---
+
+## Jira Ticket
+
+| Field | Detail |
+|-------|--------|
+| **Ticket ID** | OPS-CLOUD-004 |
+| **Priority** | High |
+| **Epic** | Azure GUI Mastery — Week 2 PaaS & Managed Services |
+| **Assigned To** | Koteswar (Cloud Engineer) |
+
+### Scenario
+
+You have just joined a fintech company as a Cloud Engineer. The development team has been storing database passwords and API keys directly in their application code — and pushing it to GitHub. The security team has raised a critical incident: credentials are visible in version control history and the Key Vault the company provisioned is publicly accessible over the internet.
+
+Your job: redesign the secrets management architecture. Deploy Azure Key Vault with a Private Endpoint so it is completely invisible to the public internet. Prove that only authorised resources inside the private network can access secrets — and that everything else is blocked.
+
+### Acceptance Criteria
+
+- Key Vault deployed with public network access **Disabled**
+- Private Endpoint created — Key Vault accessible only via private IP inside VNet
+- Private DNS Zone configured — FQDN resolves to private IP from inside VNet
+- Linux VM with Managed Identity can authenticate and retrieve secrets without any stored passwords
+- Attempted access from Azure Portal (public internet) returns **Forbidden**
+- All tests documented with proof
+
+---
+
+## What I Built
+
+A production-grade secrets management solution using Azure Key Vault with a Private Endpoint — completely isolating it from the public internet. A Linux VM inside the same VNet accesses secrets via private IP using Managed Identity authentication. Zero passwords. Zero public exposure.
+
+| Resource | Name | Configuration |
+|----------|------|--------------|
+| Virtual Network | OPS-CLOUD-004-VNet | 10.2.0.0/16 — Australia East |
+| VM Subnet | vm-subnet | 10.2.1.0/24 |
+| Vault Subnet | vault-subnet | 10.2.2.0/24 |
+| Virtual Machine | OPS-CLOUD-004-VM | Ubuntu 24.04 LTS, Standard B2s |
+| Key Vault | ops-cloud-004-kv-safe | RBAC model, Public access: Disabled |
+| Private Endpoint | vault-private-endpoint | Private IP: 10.2.2.4 |
+| Private DNS Zone | privatelink.vaultcore.azure.net | Linked to VNet |
+
+---
+
+## Why I Built It
+
+In traditional deployments, secrets — database passwords, API keys, connection strings — end up hardcoded in application code or stored in config files committed to Git. This is one of the most common and most damaging security mistakes in cloud engineering.
+
+This project answers a critical question: **how do you store secrets so that only authorised internal resources can access them, with no exposure to the public internet at all?**
+
+The answer is Key Vault + Private Endpoint. The public door is removed entirely. Access is only possible from inside the VNet.
+
+---
+
+## Architecture
+
+```
+PUBLIC INTERNET
+──────────────────────────────────────────
+Manager (No VPN) ──► Key Vault
+                      ❌ BLOCKED
+                      "Public network access is disabled"
+
+──────────────────────────────────────────
+
+AZURE VNET — 10.2.0.0/16 (Private Network)
+┌─────────────────────────────────────────────┐
+│                                             │
+│  vm-subnet (10.2.1.0/24)                   │
+│  ┌──────────────────────┐                  │
+│  │ OPS-CLOUD-004-VM     │                  │
+│  │ Ubuntu 24.04 LTS     │                  │
+│  │ Managed Identity ✅  │                  │
+│  └──────────┬───────────┘                  │
+│             │                              │
+│  vault-subnet (10.2.2.0/24)               │
+│  ┌──────────▼───────────┐                  │
+│  │ Private Endpoint     │                  │
+│  │ IP: 10.2.2.4         │                  │
+│  └──────────┬───────────┘                  │
+│             │ Private Link                 │
+└─────────────┼───────────────────────────── ┘
+              │
+              ▼
+     Azure Key Vault
+     ops-cloud-004-kv-safe
+     Public Access: DISABLED
+     Secret: DatabasePassword
+```
+
+> 📐 Architecture diagram: `architecture.png` (draw.io export)
+
+---
+
+## Key Concepts
+
+### Private Endpoint
+
+A network interface that gives a PaaS service (Key Vault) a **private IP address inside your VNet**. This removes the public IP entirely. Key Vault becomes accessible only from inside `10.2.0.0/16`.
+
+The difference from a firewall rule:
+- **Firewall rule** = allows specific IPs through the public door
+- **Private Endpoint** = removes the public door entirely
+
+### Private DNS Zone
+
+Without this, even with a Private Endpoint configured, the Key Vault FQDN still resolves to its old public IP — and that public access is blocked. The Private DNS Zone intercepts DNS queries from inside the VNet and returns the private IP instead.
+
+| Location | DNS Resolution |
+|----------|---------------|
+| Inside VNet | `ops-cloud-004-kv-safe.vault.azure.net` → **10.2.2.4** ✅ |
+| Public internet | Resolves to public IP → access blocked ❌ |
+
+### Managed Identity
+
+Azure automatically assigns the VM an identity in Entra ID — no passwords, no service principals, no credentials to store or rotate. When the VM needs to authenticate to Key Vault, Azure handles token generation automatically.
+
+### Defense in Depth
+
+Two independent security layers — both required:
+
+| Layer | Check | If Missing |
+|-------|-------|-----------|
+| Network | Is the request coming from inside the VNet? | Blocked — public access disabled |
+| Authorization | Does the identity have the correct RBAC role? | Blocked — 403 Forbidden |
+
+Being inside the VNet is not enough. You also need the RBAC role. Missing either one = no access.
+
+---
+
+## Build Steps
+
+### Phase 1 — Network Foundation
+1. Created VNet `OPS-CLOUD-004-VNet` (10.2.0.0/16) in Australia East
+2. Created `vm-subnet` (10.2.1.0/24) for the VM
+3. Created `vault-subnet` (10.2.2.0/24) for the Private Endpoint
+4. Disabled **Private endpoint network policies** on vault-subnet — required before creating the endpoint
+
+### Phase 2 — Virtual Machine
+5. Deployed Ubuntu 24.04 LTS VM in vm-subnet
+6. Enabled **System-assigned Managed Identity**
+7. Installed Azure CLI on the VM
+
+### Phase 3 — Key Vault + Private Endpoint
+8. Created Key Vault with:
+   - Permission model: Azure RBAC
+   - Public network access: **Disabled**
+9. Created Private Endpoint in vault-subnet → received private IP: **10.2.2.4**
+10. Private DNS Zone auto-created: `privatelink.vaultcore.azure.net` — linked to VNet
+
+### Phase 4 — RBAC Configuration
+11. Initially assigned VM **Key Vault Secrets User** (read-only)
+12. Upgraded to **Key Vault Secrets Officer** (read + write) for lab testing
+
+### Phase 5 — Secret Management (from VM via CLI)
+13. Created secret from VM — Portal blocked because public access is disabled:
+```bash
+az login --identity
+az keyvault secret set \
+  --vault-name ops-cloud-004-kv-safe \
+  --name DatabasePassword \
+  --value "MySecurePassword123!"
+```
+14. Retrieved secret to verify:
+```bash
+az keyvault secret show \
+  --vault-name ops-cloud-004-kv-safe \
+  --name DatabasePassword \
+  --query value -o tsv
+# Output: MySecurePassword123! ✅
+```
+
+---
+
+## Testing & Validation
+
+| Test | From | Result | Proves |
+|------|------|--------|--------|
+| Public access blocked | Azure Portal (internet) | ❌ Forbidden | Key Vault invisible to public internet |
+| Private DNS resolution | VM inside VNet | Resolves to 10.2.2.4 ✅ | DNS Zone correctly overrides public resolution |
+| Managed Identity auth | VM inside VNet | Authenticated as systemAssignedIdentity ✅ | Passwordless authentication works |
+| Secret creation | VM inside VNet | DatabasePassword created ✅ | VM can write via Private Endpoint |
+| Secret retrieval | VM inside VNet | MySecurePassword123! returned ✅ | VM can read via Private Endpoint |
+
+---
+
+## Key Decisions & Reasoning
+
+**Why RBAC over Access Policies?**  
+RBAC is Microsoft's modern recommended model. It's consistent across all Azure services, scalable, and integrates cleanly with Managed Identities. Access Policies are legacy — they only exist for backward compatibility.
+
+**Why two separate subnets?**  
+Logical separation between compute (vm-subnet) and network services (vault-subnet). Each subnet can have its own NSG rules. Follows Azure Well-Architected Framework. Makes the architecture scalable — easy to add more VMs or more Private Endpoints independently.
+
+**Why disable public access entirely?**  
+Zero-trust model — deny all, allow specific. A firewall rule with an IP allowlist still exposes the vault to the internet — a misconfigured rule can accidentally allow broad access. No public door = no risk of misconfiguration.
+
+**Why Secrets Officer instead of Secrets User for the VM?**  
+Lab requirement — needed to create secrets from the VM since the Portal was blocked. In production, applications only need read access (Secrets User). Write access (Secrets Officer) belongs to admin accounts, not the application itself.
+
+---
+
+## Problems Encountered & How I Resolved Them
+
+**Portal cannot create secrets when public access is disabled**  
+The Azure Portal runs from the public internet. With public access disabled, the Portal is blocked. Solution: SSH into the VM and use Azure CLI from inside the VNet where the Private Endpoint is reachable.
+
+**RBAC propagation delay**  
+Role assignment took 1–2 minutes to propagate. Access failed immediately after assignment — waited and retried. Never assume an RBAC change is instant.
+
+**Subnet configuration order matters**  
+Must disable "Private endpoint network policies" on the subnet BEFORE creating the Private Endpoint. Attempting to create the endpoint first fails with an unclear error message.
+
+---
+
+## Production Thinking — What Could Go Wrong
+
+**Private Endpoint deleted accidentally**  
+Key Vault becomes completely inaccessible — public access is still disabled and the private path is gone. Fix: re-create the Private Endpoint, or temporarily enable public access to recover.
+
+**VNet Peering does not extend Private Endpoint access**  
+If VNet B is peered with VNet A (which has the Private Endpoint), a VM in VNet B cannot reach Key Vault through the peering. Private Endpoints are VNet-specific. Fix: create a separate Private Endpoint in VNet B.
+
+**Managed Identity stolen**  
+Managed Identity credentials are bound to the VM's hardware and can only be used from that specific VM instance. They cannot be exported. If the VM is deleted, the identity becomes useless immediately.
+
+---
+
+## Concepts Applied from Coursework
+
+| Concept | Where It Appeared |
+|---------|------------------|
+| VNet + Subnets | Two subnets — vm-subnet and vault-subnet — for logical separation |
+| Private Endpoint gives PaaS a private IP | Key Vault received 10.2.2.4 inside the VNet |
+| Private DNS Zone for name resolution | FQDN resolves to 10.2.2.4 inside VNet |
+| Managed Identity = passwordless auth | VM authenticated to Key Vault with no stored credentials |
+| RBAC = principle of least privilege | Secrets Officer for lab; Secrets User for production apps |
+| Defense in depth | Network isolation + RBAC authorization — both layers required |
+| Tags for cost management | Project, Environment, Owner, Region tags on all resources |
+
+---
+
+## Resource Cleanup
+
+```bash
+az group delete --name RG-OPS-CLOUD-004-ALT --yes --no-wait
+```
+
+Removes: VNet, Subnets, VM, Disk, NIC, Public IP, Key Vault, Private Endpoint, Private DNS Zone.
+
+> ⚠️ Always delete the entire Resource Group. Deleting only the VM leaves the disk, NIC, and public IP still billing.
+
+---
+
+*Koteswar Rao — Azure Cloud Journey | OPS-CLOUD-004 | Phase 1 Console*  
+*Next: [OPS-CLOUD-005 — Secure App Service + Key Vault](../OPS-CLOUD-005-Secure-App-Service-KeyVault/README.md)*
