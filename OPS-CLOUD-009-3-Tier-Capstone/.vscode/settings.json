@@ -1,0 +1,8 @@
+{
+    "appService.zipIgnorePattern": [
+        "node_modules{,/**}",
+        ".vscode{,/**}"
+    ],
+    "appService.defaultWebAppToDeploy": "/subscriptions/d84ef03e-6d2f-4b85-a00f-a13a7ed1d4bb/resourceGroups/rg-capstone-opscloud009/providers/Microsoft.Web/sites/app-capstone-009",
+    "appService.deploySubpath": "backend"
+}

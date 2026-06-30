@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OPS-CLOUD-009 Capstone</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: Arial, sans-serif; 
+            background: #f0f4f8; 
+            padding: 40px; 
+        }
+        .container { 
+            max-width: 800px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 30px; 
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #0078d4; margin-bottom: 8px; }
+        p { color: #666; margin-bottom: 24px; }
+        .buttons { margin-bottom: 20px; }
+        button { 
+            background: #0078d4; 
+            color: white; 
+            padding: 10px 20px; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer;
+            margin-right: 10px;
+            font-size: 14px;
+        }
+        button:hover { background: #005a9e; }
+        .status { 
+            padding: 12px; 
+            border-radius: 4px; 
+            margin-bottom: 16px;
+            background: #e7f3ff;
+            color: #0078d4;
+            display: none;
+        }
+        .error { background: #ffe7e7; color: #d32f2f; }
+        .product { 
+            background: #f9f9f9; 
+            padding: 16px; 
+            margin: 10px 0; 
+            border-radius: 4px;
+            border-left: 4px solid #0078d4;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .product-name { font-weight: bold; color: #333; }
+        .product-price { 
+            color: #0078d4; 
+            font-size: 18px; 
+            font-weight: bold; 
+        }
+        #products { margin-top: 16px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 OPS-CLOUD-009 Capstone</h1>
+        <p>3-Tier Web Application — Azure Blob + App Service + SQL Database</p>
+        
+        <div class="buttons">
+            <button onclick="checkHealth()">Check API Health</button>
+            <button onclick="loadProducts()">Load Products</button>
+        </div>
+        
+        <div id="status" class="status"></div>
+        <div id="products"></div>
+    </div>
+
+    <script>
+        const API = 'https://app-capstone-009-h6cga4dhbtfeftgb.australiaeast-01.azurewebsites.net';
+
+        async function checkHealth() {
+            const status = document.getElementById('status');
+            status.style.display = 'block';
+            status.className = 'status';
+            try {
+                const res = await fetch(`${API}/api/health`);
+                const data = await res.json();
+                status.innerHTML = `✅ API Status: <strong>${data.status}</strong> | Region: ${data.region} | Time: ${new Date(data.timestamp).toLocaleTimeString()}`;
+            } catch (err) {
+                status.className = 'status error';
+                status.innerHTML = `❌ API unreachable: ${err.message}`;
+            }
+        }
+
+        async function loadProducts() {
+            const status = document.getElementById('status');
+            const products = document.getElementById('products');
+            status.style.display = 'block';
+            status.className = 'status';
+            status.innerHTML = '⏳ Loading products...';
+            try {
+                const res = await fetch(`${API}/api/products`);
+                const data = await res.json();
+                status.innerHTML = `✅ Loaded ${data.length} products from Azure SQL Database`;
+                products.innerHTML = data.map(p => `
+                    <div class="product">
+                        <span class="product-name">${p.name}</span>
+                        <span class="product-price">$${p.price}</span>
+                    </div>
+                `).join('');
+            } catch (err) {
+                status.className = 'status error';
+                status.innerHTML = `❌ Failed to load products: ${err.message}`;
+            }
+        }
+    </script>
+</body>
+</html>
